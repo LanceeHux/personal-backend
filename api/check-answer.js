@@ -1,17 +1,18 @@
 export default async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "https://lanceehux.github.io");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-
-    const {
-      question,
-      answerIdea,
-      sourceBasis,
-      userAnswer
-    } = req.body;
+    const { question, answerIdea, sourceBasis, userAnswer } = req.body;
 
     const prompt = [
       {
@@ -38,12 +39,12 @@ ${userAnswer}
 Return JSON:
 
 {
- "score": number 0-100,
- "verdict": "correct | partially_correct | incorrect",
- "feedback": "...",
- "missed_points": [],
- "strong_points": [],
- "corrected_answer": "..."
+  "score": 0,
+  "verdict": "correct",
+  "feedback": "...",
+  "missed_points": [],
+  "strong_points": [],
+  "corrected_answer": "..."
 }
 `
       }
@@ -66,13 +67,15 @@ Return JSON:
 
     const data = await groq.json();
 
-    const content = data.choices[0].message.content;
+    if (!groq.ok) {
+      return res.status(groq.status).json({
+        error: data.error?.message || "Groq request failed"
+      });
+    }
 
-    res.status(200).json(JSON.parse(content));
-
+    const content = data.choices?.[0]?.message?.content || "{}";
+    return res.status(200).json(JSON.parse(content));
   } catch (err) {
-
-    res.status(500).json({ error: err.message });
-
+    return res.status(500).json({ error: err.message });
   }
 }
