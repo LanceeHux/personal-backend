@@ -26,11 +26,13 @@ function stripGarbage(text) {
     if (lower.includes("author(s)")) return false;
     if (lower.includes("rex book store")) return false;
     if (lower.includes("sampaloc manila")) return false;
+    if (lower.includes("please check the box")) return false;
+    if (lower.includes("expert teacher")) return false;
 
     return true;
   });
 
-  return normalizeText(cleaned.join("\n")).slice(0, 6000);
+  return normalizeText(cleaned.join("\n")).slice(0, 7000);
 }
 
 function shuffle(arr) {
@@ -42,27 +44,27 @@ function shuffle(arr) {
   return copy;
 }
 
-async function callLLM({ text, difficulty, type }) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+async function callGroq({ text, difficulty, type }) {
+  const apiKey = process.env.GROQ_API_KEY;
+  const model = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 
   if (!apiKey) {
-    throw new Error("Missing OPENAI_API_KEY");
+    throw new Error("Missing GROQ_API_KEY");
   }
 
   const prompt = `
-You are making a multiple-choice reviewer from study material.
+You are creating a multiple-choice reviewer from study material.
 
-Task:
-1. Understand the study material context.
+Your job:
+1. Understand the academic context of the material.
 2. Create exactly 1 question.
 3. Create exactly 3 answer choices total.
 4. Only 1 choice must be correct.
-5. The other 2 choices must be plausible but incorrect.
-6. The wrong choices should be close to the topic, slightly twisted, partially true, or subtly inaccurate.
-7. Avoid random copied metadata, titles, addresses, author names, forms, worksheet labels, and bibliography text.
-8. Focus on meaningful academic content only.
-9. Keep the answer choices concise but clear.
+5. The other 2 choices must be believable but incorrect.
+6. The wrong choices should stay close to the topic, but be subtly wrong, incomplete, twisted, or slightly misleading.
+7. Ignore irrelevant worksheet text, headers, forms, addresses, author names, bibliography entries, and publisher details.
+8. Focus only on meaningful lesson content.
+9. Keep choices clear and readable.
 10. Return valid JSON only.
 
 Difficulty: ${difficulty}
@@ -79,28 +81,27 @@ Return JSON in exactly this shape:
 }
 
 Rules:
-- "choices" must include the exact correct_answer plus 2 wrong answers.
-- Make the wrong answers believable.
-- Do not make joke answers.
-- Do not copy irrelevant worksheet text.
-- source_snippet should be a short supporting excerpt or paraphrased basis from the material.
-- topic should be short.
+- "choices" must contain the exact correct_answer plus 2 wrong answers.
+- Wrong answers must be plausible, not random.
+- Do not use joke answers.
+- Do not copy irrelevant metadata.
+- source_snippet should be a short supporting excerpt or paraphrased idea from the study material.
+- topic should be short and meaningful.
 `;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
+      Authorization: `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       model,
       temperature: 0.8,
-      response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
-          content: "You generate high-quality multiple-choice study questions from study notes."
+          content: "You generate high-quality multiple-choice study questions from study notes and always return valid JSON."
         },
         {
           role: "user",
@@ -113,17 +114,36 @@ Rules:
   const raw = await response.text();
 
   if (!response.ok) {
-    throw new Error(`LLM error: ${raw}`);
+    throw new Error(`Groq error: ${raw}`);
   }
 
   const data = JSON.parse(raw);
   const content = data.choices?.[0]?.message?.content;
 
   if (!content) {
-    throw new Error("No LLM content returned.");
+    throw new Error("No Groq content returned.");
   }
 
-  return JSON.parse(content);
+  return extractJSONObject(content);
+}
+
+function extractJSONObject(content) {
+  const text = String(content || "").trim();
+
+  try {
+    return JSON.parse(text);
+  } catch {}
+
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    throw new Error("Could not find valid JSON in model response.");
+  }
+
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    throw new Error("Model returned malformed JSON.");
+  }
 }
 
 function validateOutput(output) {
@@ -135,11 +155,11 @@ function validateOutput(output) {
     throw new Error("Missing required AI output fields.");
   }
 
+  const correct = normalizeText(output.correct_answer);
+
   let choices = output.choices
     .map(choice => normalizeText(choice))
     .filter(Boolean);
-
-  const correct = normalizeText(output.correct_answer);
 
   if (!choices.includes(correct)) {
     choices.push(correct);
@@ -206,7 +226,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const aiOutput = await callLLM({
+    const aiOutput = await callGroq({
       text: cleanedText,
       difficulty,
       type
