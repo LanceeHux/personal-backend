@@ -6,7 +6,27 @@ function splitIntoSentences(text) {
   return normalizeText(text)
     .split(/(?<=[.?!])\s+/)
     .map(s => s.trim())
-    .filter(s => s.length >= 30);
+    .filter(s => {
+      if (s.length < 30) return false;
+
+      const lower = s.toLowerCase();
+
+      if (lower.includes("grade") && lower.includes("section")) return false;
+      if (lower.includes("learning activity")) return false;
+      if (lower.includes("activity sheet")) return false;
+      if (lower.includes("please check the box")) return false;
+      if (lower.includes("date:")) return false;
+      if (lower.includes("subject:")) return false;
+      if (lower.includes("quarter")) return false;
+      if (lower.includes("expert teacher")) return false;
+      if (lower.includes("name:")) return false;
+
+      if (s.includes("____")) return false;
+      if (/^[A-Z\s]{10,}$/.test(s)) return false;
+      if (/^[A-Za-z\s]+:$/.test(s)) return false;
+
+      return true;
+    });
 }
 
 function pickRandom(arr) {
@@ -31,47 +51,71 @@ function shorten(text, max = 180) {
 function buildQuestion(type) {
   switch (type) {
     case "concept":
-      return "Which choice best explains the concept from the reviewer?";
+      return "Which option correctly explains the concept?";
     case "application":
-      return "Which choice is the best application of the idea from the reviewer?";
+      return "Which option best applies the idea described in the reviewer?";
     case "comparison":
-      return "Which choice best matches the statement from the reviewer?";
+      return "Which option correctly describes the comparison?";
     case "definition":
     default:
-      return "Which choice best defines the idea from the reviewer?";
+      return "Which statement correctly represents the idea from the reviewer?";
   }
 }
 
-function makeFallbackWrongs(correctAnswer) {
-  return [
-    "A statement that sounds related but does not match the main idea.",
-    "A definition for a different concept than the one asked in the question."
-  ].filter(w => w.toLowerCase() !== correctAnswer.toLowerCase());
+function makeFallbackWrongs(correctAnswer, type) {
+  const pools = {
+    definition: [
+      "A statement that sounds related but does not match the actual definition.",
+      "An explanation of a different concept that is not the correct answer.",
+      "A description that is too vague to correctly define the idea."
+    ],
+    concept: [
+      "A related idea, but not the concept being explained.",
+      "An incomplete explanation that misses the real meaning of the concept.",
+      "A misleading explanation that sounds correct at first."
+    ],
+    application: [
+      "An example that does not actually apply the concept correctly.",
+      "A situation that is related to the topic but uses the idea the wrong way.",
+      "A statement that describes the topic but not its application."
+    ],
+    comparison: [
+      "A statement that mentions the topic but does not compare it correctly.",
+      "A description that mixes up similarities and differences.",
+      "An option that focuses on only one side instead of making a comparison."
+    ]
+  };
+
+  return (pools[type] || pools.definition)
+    .filter(item => item.toLowerCase() !== correctAnswer.toLowerCase())
+    .slice(0, 2);
 }
 
-function buildWrongChoices(correctAnswer, sentences) {
+function buildWrongChoices(correctAnswer, sentences, type) {
+  const normalizedCorrect = normalizeText(correctAnswer).toLowerCase();
+
   const candidates = sentences.filter(sentence => {
     const normalizedSentence = normalizeText(sentence).toLowerCase();
-    const normalizedCorrect = normalizeText(correctAnswer).toLowerCase();
 
-    return (
-      normalizedSentence !== normalizedCorrect &&
-      normalizedSentence.length >= 25 &&
-      !normalizedCorrect.includes(normalizedSentence) &&
-      !normalizedSentence.includes(normalizedCorrect)
-    );
+    if (normalizedSentence === normalizedCorrect) return false;
+    if (normalizedSentence.length < 25) return false;
+    if (normalizedCorrect.includes(normalizedSentence)) return false;
+    if (normalizedSentence.includes(normalizedCorrect)) return false;
+
+    return true;
   });
 
   const unique = [];
   for (const candidate of candidates) {
-    if (!unique.some(item => item.toLowerCase() === candidate.toLowerCase())) {
-      unique.push(shorten(candidate));
+    const shortCandidate = shorten(candidate);
+    if (!unique.some(item => item.toLowerCase() === shortCandidate.toLowerCase())) {
+      unique.push(shortCandidate);
     }
     if (unique.length === 2) break;
   }
 
   if (unique.length < 2) {
-    const fallback = makeFallbackWrongs(correctAnswer);
+    const fallback = makeFallbackWrongs(correctAnswer, type);
     for (const item of fallback) {
       if (unique.length < 2) unique.push(item);
     }
@@ -83,7 +127,9 @@ function buildWrongChoices(correctAnswer, sentences) {
 function chooseSourceSentence(sentences, difficulty) {
   if (!sentences.length) return "";
 
-  if (difficulty === "easy") return sentences[0];
+  if (difficulty === "easy") {
+    return sentences[0];
+  }
 
   if (difficulty === "hard") {
     const longer = sentences.filter(s => s.length > 80);
@@ -130,13 +176,13 @@ module.exports = async function handler(req, res) {
 
     if (!sentences.length) {
       return res.status(400).json({
-        error: "Not enough usable text to generate a question."
+        error: "Not enough clean text to generate a question."
       });
     }
 
     const sourceSentence = chooseSourceSentence(sentences, difficulty);
     const correctAnswer = shorten(sourceSentence);
-    const wrongChoices = buildWrongChoices(correctAnswer, sentences);
+    const wrongChoices = buildWrongChoices(correctAnswer, sentences, type);
     const choices = shuffle([correctAnswer, ...wrongChoices]);
 
     return res.status(200).json({
