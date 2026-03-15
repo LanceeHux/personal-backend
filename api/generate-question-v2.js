@@ -32,7 +32,7 @@ function stripGarbage(text) {
     return true;
   });
 
-  return normalizeText(cleaned.join("\n")).slice(0, 7000);
+  return normalizeText(cleaned.join("\n")).slice(0, 9000);
 }
 
 function shuffle(arr) {
@@ -42,6 +42,54 @@ function shuffle(arr) {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+function splitIntoChunks(text, chunkSize = 900) {
+  const sentences = String(text || "")
+    .split(/(?<=[.?!])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 20);
+
+  const chunks = [];
+  let current = "";
+
+  for (const sentence of sentences) {
+    if ((current + " " + sentence).trim().length > chunkSize) {
+      if (current.trim().length > 80) {
+        chunks.push(current.trim());
+      }
+      current = sentence;
+    } else {
+      current += (current ? " " : "") + sentence;
+    }
+  }
+
+  if (current.trim().length > 80) {
+    chunks.push(current.trim());
+  }
+
+  return chunks;
+}
+
+function pickRandomChunk(chunks) {
+  if (!chunks.length) return "";
+  const index = Math.floor(Math.random() * chunks.length);
+  return chunks[index];
+}
+
+function extractJSONObject(content) {
+  const text = String(content || "").trim();
+
+  try {
+    return JSON.parse(text);
+  } catch {}
+
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) {
+    throw new Error("Could not find valid JSON in model response.");
+  }
+
+  return JSON.parse(match[0]);
 }
 
 async function callGroq({ text, difficulty, type }) {
@@ -55,8 +103,11 @@ async function callGroq({ text, difficulty, type }) {
   const prompt = `
 You are creating a multiple-choice reviewer from study material.
 
+Use ONLY the provided study excerpt below.
+Do not invent content outside the excerpt.
+
 Your job:
-1. Understand the academic context of the material.
+1. Understand the excerpt.
 2. Create exactly 1 question.
 3. Create exactly 3 answer choices total.
 4. Only 1 choice must be correct.
@@ -82,10 +133,9 @@ Return JSON in exactly this shape:
 
 Rules:
 - "choices" must contain the exact correct_answer plus 2 wrong answers.
-- Wrong answers must be plausible, not random.
+- Wrong answers must be plausible, not random garbage.
 - Do not use joke answers.
-- Do not copy irrelevant metadata.
-- source_snippet should be a short supporting excerpt or paraphrased idea from the study material.
+- source_snippet should be a short supporting excerpt or paraphrased idea from the study excerpt.
 - topic should be short and meaningful.
 `;
 
@@ -97,7 +147,7 @@ Rules:
     },
     body: JSON.stringify({
       model,
-      temperature: 0.8,
+      temperature: 1,
       messages: [
         {
           role: "system",
@@ -105,7 +155,7 @@ Rules:
         },
         {
           role: "user",
-          content: `${prompt}\n\nStudy material:\n${text}`
+          content: `${prompt}\n\nStudy excerpt:\n${text}`
         }
       ]
     })
@@ -125,25 +175,6 @@ Rules:
   }
 
   return extractJSONObject(content);
-}
-
-function extractJSONObject(content) {
-  const text = String(content || "").trim();
-
-  try {
-    return JSON.parse(text);
-  } catch {}
-
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) {
-    throw new Error("Could not find valid JSON in model response.");
-  }
-
-  try {
-    return JSON.parse(match[0]);
-  } catch {
-    throw new Error("Model returned malformed JSON.");
-  }
 }
 
 function validateOutput(output) {
@@ -226,8 +257,18 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    const chunks = splitIntoChunks(cleanedText, 900);
+
+    if (!chunks.length) {
+      return res.status(400).json({
+        error: "Could not create usable text chunks."
+      });
+    }
+
+    const randomChunk = pickRandomChunk(chunks);
+
     const aiOutput = await callGroq({
-      text: cleanedText,
+      text: randomChunk,
       difficulty,
       type
     });
