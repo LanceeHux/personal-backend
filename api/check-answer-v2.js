@@ -1,3 +1,7 @@
+function normalizeText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -16,8 +20,9 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const isCorrect =
-      String(selectedAnswer).trim() === String(correctAnswer).trim();
+    const correct = normalizeText(correctAnswer);
+    const selected = normalizeText(selectedAnswer);
+    const isCorrect = selected === correct;
 
     return res.status(200).json({
       score: isCorrect ? 100 : 0,
