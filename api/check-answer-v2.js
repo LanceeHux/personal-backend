@@ -3,16 +3,20 @@ function normalizeText(text) {
 }
 
 module.exports = async function handler(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "https://lanceehux.github.io");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const {
-      question,
-      correctAnswer,
-      selectedAnswer
-    } = req.body || {};
+    const { question, correctAnswer, selectedAnswer } = req.body || {};
 
     if (!question || !correctAnswer || !selectedAnswer) {
       return res.status(400).json({
@@ -32,7 +36,7 @@ module.exports = async function handler(req, res) {
         : "That choice does not match the correct answer."
     });
   } catch (error) {
-    console.error("check-answer error:", error);
+    console.error("check-answer-v2 error:", error);
     return res.status(500).json({
       error: "Failed to check answer."
     });
