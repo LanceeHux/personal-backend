@@ -33,7 +33,7 @@ module.exports = async function handler(req, res) {
       verdict: isCorrect ? "Correct" : "Incorrect",
       feedback: isCorrect
         ? "You selected the correct answer."
-        : "That choice does not match the correct answer."
+        : "That choice is related, but it is not the best answer."
     });
   } catch (error) {
     console.error("check-answer-v2 error:", error);
