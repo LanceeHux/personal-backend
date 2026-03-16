@@ -1,7 +1,6 @@
 export default async function handler(req, res) {
-  const allowedOrigin = "https://personal-backend.github.io";
 
-  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
