@@ -75,7 +75,7 @@ You are an educational quiz generator.
 Using ONLY the study material below, create exactly ONE multiple-choice question.
 
 Strict rules:
-- The question must be based on an important idea from the material.
+- The question must be based on an important idea from the material, but you can mix some of your own examples.
 - Avoid repeating the same topic or wording as previous questions.
 - Focus on a RANDOM concept from the provided material.
 - Do NOT keep asking about only one main topic if other concepts exist.
